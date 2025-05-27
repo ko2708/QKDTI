@@ -1,0 +1,4 @@
+Model,MSE,RMSE,Accuracy (%),R2 Score,Pearson r,AUC-ROC
+Quantum Transformer (DAVIS),0.287,0.535,93.43,0.835,0.894,0.948
+Quantum Transformer (KIBA),0.0004,0.02,99.95,0.619,0.788,0.812
+Quantum Transformer (BindingDB),0.462,0.68,89.21,0.599,0.766,0.912
