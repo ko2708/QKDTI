@@ -1,0 +1,7 @@
+Dataset,Model,Test,Statistic,p-value
+DAVIS,QKDTI,Paired t-test,2.5214,0.0182
+DAVIS,QKDTI,Wilcoxon,0.0,0.125
+KIBA,QKDTI,Paired t-test,3.05,0.014
+KIBA,QKDTI,Wilcoxon,2.0,0.031
+BindingDB,QKDTI,Paired t-test,3.5123,0.0045
+BindingDB,QKDTI,Wilcoxon,0.0,0.002
