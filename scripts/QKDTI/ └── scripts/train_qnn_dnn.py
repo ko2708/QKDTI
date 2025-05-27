@@ -1,7 +1,7 @@
 # QKDTI/scripts/train_qtransformer.py
 """
 Script: train_qtransformer.py
-Description: Train and evaluate a Quantum-Inspired Transformer model on TDC datasets .
+Description: Train and evaluate a Quantum-Inspired Transformer model on TDC datasets (DAVIS).
 Usage: python train_qtransformer.py
 """
 
@@ -106,4 +106,3 @@ def train_qtransformer():
 
 if __name__ == "__main__":
     train_qtransformer()
-
