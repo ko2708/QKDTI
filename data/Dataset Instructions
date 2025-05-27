@@ -1,0 +1,33 @@
+# 📁 Dataset Instructions
+
+This folder contains notes and guidance on how datasets are used in the QKDTI pipeline.
+
+## Supported Datasets
+QKDTI supports the following DTI benchmark datasets from the [Therapeutics Data Commons (TDC)](https://tdcommons.ai/):
+- **DAVIS**: Drug-kinase binding affinities measured in Kd.
+- **KIBA**: Unified bioactivity score combining Ki, Kd, IC50, EC50.
+- **BindingDB_Kd**: Bioactivity data based on Kd values.
+
+ Dataset Download & Loading
+All datasets are automatically downloaded using the TDC Python package:
+```python
+from tdc.multi_pred import DTI
+data = DTI(name='KIBA')
+split = data.get_split()
+```
+
+ Preprocessing
+- All binding values (Y) are log-transformed using:
+```python
+from tdc.utils import convert_to_log
+split['train']['Y'] = convert_to_log(split['train']['Y'])
+split['test']['Y'] = convert_to_log(split['test']['Y'])
+```
+- For efficient simulation, subsets are often used (e.g., first 5000 samples).
+
+nput Features
+For demonstration, synthetic features are generated using `np.random.rand()`. In real use cases, replace these with:
+- Morgan fingerprints from SMILES
+- Precomputed embeddings
+- Feature fusion strategies (graph + sequence encoders)
+
