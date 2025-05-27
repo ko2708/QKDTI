@@ -1,55 +1,50 @@
-# QKDTI/scripts/train_qtransformer.py
+# QKDTI/scripts/train_qnn_dnn.py
 """
-Script: train_qtransformer.py
-Description: Train and evaluate a Quantum-Inspired Transformer model on TDC datasets (DAVIS).
-Usage: python train_qtransformer.py
+Script: train_qnn_dnn.py
+Description: Train a hybrid Quantum Neural Network and Deep Neural Network (QNN-DNN) model on the BindingDB_Kd dataset.
 """
 
 import numpy as np
 import pandas as pd
+import pennylane as qml
 import tensorflow as tf
-from tensorflow import keras
-from tensorflow.keras.layers import Dense, LayerNormalization, Dropout, Input, Reshape, Flatten
-from sklearn.metrics import mean_squared_error, r2_score, roc_auc_score
+from tensorflow.keras import layers, models, callbacks
 from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_percentage_error, roc_auc_score
 from scipy.stats import pearsonr
 from tdc.multi_pred import DTI
 from tdc.utils import convert_to_log
 
-# Transformer block
-class QuantumTransformerLayer(keras.layers.Layer):
-    def __init__(self, embed_dim, num_heads, ff_dim, dropout=0.1):
-        super(QuantumTransformerLayer, self).__init__()
-        self.attention = keras.layers.MultiHeadAttention(num_heads=num_heads, key_dim=embed_dim)
-        self.norm1 = LayerNormalization(epsilon=1e-6)
-        self.norm2 = LayerNormalization(epsilon=1e-6)
-        self.dropout1 = Dropout(dropout)
-        self.dropout2 = Dropout(dropout)
-        self.ffn = keras.Sequential([
-            Dense(ff_dim, activation="relu"),
-            Dense(embed_dim)
-        ])
+# Quantum device setup
+n_qubits = 8
+dev = qml.device("default.qubit", wires=n_qubits)
 
-    def call(self, inputs, training=False):
-        attn_output = self.attention(inputs, inputs)
-        attn_output = self.dropout1(attn_output, training=training)
-        out1 = self.norm1(inputs + attn_output)
-        ffn_output = self.ffn(out1)
-        ffn_output = self.dropout2(ffn_output, training=training)
-        return self.norm2(out1 + ffn_output)
+# Quantum encoder
+@qml.qnode(dev)
+def quantum_embedding(weights, x):
+    for i in range(n_qubits):
+        qml.RY(weights[i], wires=i)
+        qml.RZ(x[i % len(x)], wires=i)
+    for i in range(n_qubits - 1):
+        qml.CZ(wires=[i, i+1])
+    return [qml.expval(qml.PauliZ(i)) for i in range(n_qubits)]
 
-# Load and preprocess dataset
+def compute_quantum_features(X):
+    weights = np.random.uniform(0, np.pi, n_qubits)
+    quantum_features = np.array([quantum_embedding(weights, x) for x in X])
+    return quantum_features
+
 def process_dataset():
-    data = DTI(name="DAVIS")
+    data = DTI(name="BindingDB_Kd")
     split = data.get_split()
     split["train"]["Y"] = convert_to_log(split["train"]["Y"])
     split["test"]["Y"] = convert_to_log(split["test"]["Y"])
 
-    subset_size = 500
-    X_train = np.random.rand(subset_size, 8)
-    X_test = np.random.rand(200, 8)
+    subset_size = 1000
+    X_train = np.random.rand(subset_size, 128)
+    X_test = np.random.rand(300, 128)
     y_train = split["train"]["Y"].values[:subset_size]
-    y_test = split["test"]["Y"].values[:200]
+    y_test = split["test"]["Y"].values[:300]
 
     scaler = StandardScaler()
     X_train = scaler.fit_transform(X_train)
@@ -57,52 +52,62 @@ def process_dataset():
 
     return X_train, X_test, y_train, y_test
 
-# Build model
-def build_transformer_model(input_dim=8):
-    inputs = Input(shape=(input_dim,))
-    reshaped = Reshape((1, input_dim))(inputs)
-    x = QuantumTransformerLayer(embed_dim=input_dim, num_heads=4, ff_dim=64)(reshaped)
-    x = Flatten()(x)
-    x = Dense(64, activation="relu")(x)
-    x = Dense(32, activation="relu")(x)
-    outputs = Dense(1)(x)
-
-    model = keras.Model(inputs=inputs, outputs=outputs)
-    model.compile(optimizer="adam", loss="mse", metrics=["mae"])
+def build_dnn():
+    model = models.Sequential([
+        layers.Dense(128, activation="relu"),
+        layers.BatchNormalization(),
+        layers.Dropout(0.3),
+        layers.Dense(64, activation="relu"),
+        layers.BatchNormalization(),
+        layers.Dense(32, activation="relu"),
+        layers.Dense(1, activation="linear")
+    ])
+    model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=0.0005),
+                  loss="mse", metrics=["mae"])
     return model
 
-# Train and evaluate
-def train_qtransformer():
-    X_train, X_test, y_train, y_test = process_dataset()
-    model = build_transformer_model()
-    model.fit(X_train, y_train, validation_data=(X_test, y_test), epochs=50, batch_size=32, verbose=1)
-
-    y_pred = model.predict(X_test).flatten()
-    mse = mean_squared_error(y_test, y_pred)
+def compute_metrics(y_true, y_pred):
+    mse = mean_squared_error(y_true, y_pred)
     rmse = np.sqrt(mse)
-    r2 = r2_score(y_test, y_pred)
-    pearson_corr, _ = pearsonr(y_test, y_pred)
-    accuracy = 100 - (np.mean(np.abs((y_test - y_pred) / y_test)) * 100)
+    r2 = r2_score(y_true, y_pred)
+    pearson_corr, _ = pearsonr(y_true, y_pred)
+    mape = mean_absolute_percentage_error(y_true, y_pred)
+    accuracy = 100 - (mape * 100)
 
     try:
-        auc = roc_auc_score((y_test > np.median(y_test)).astype(int), y_pred)
+        y_bin = (y_true >= np.median(y_true)).astype(int)
+        auc_roc = roc_auc_score(y_bin, y_pred)
     except:
-        auc = None
+        auc_roc = None
 
-    print(f"\n📊 Quantum Transformer on DAVIS:")
-    print(f"MSE: {mse:.4f}, RMSE: {rmse:.4f}, R²: {r2:.4f}, Pearson r: {pearson_corr:.4f}, Accuracy: {accuracy:.2f}%, AUC-ROC: {auc if auc else 'N/A'}")
+    return mse, rmse, accuracy, r2, pearson_corr, auc_roc
+
+def train_qnn_dnn():
+    X_train, X_test, y_train, y_test = process_dataset()
+    X_train_q = compute_quantum_features(X_train)
+    X_test_q = compute_quantum_features(X_test)
+
+    model = build_dnn()
+    early_stop = callbacks.EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True)
+    model.fit(X_train_q, y_train, validation_data=(X_test_q, y_test), epochs=100, batch_size=16, verbose=1, callbacks=[early_stop])
+
+    y_pred = model.predict(X_test_q).ravel()
+    mse, rmse, accuracy, r2, pearson_corr, auc_roc = compute_metrics(y_test, y_pred)
+
+    print("\n📊 QNN-DNN Metrics on BindingDB_Kd:")
+    print(f"MSE: {mse:.4f}, RMSE: {rmse:.4f}, Accuracy: {accuracy:.2f}%, R²: {r2:.4f}, Pearson r: {pearson_corr:.4f}, AUC-ROC: {auc_roc if auc_roc else 'N/A'}")
 
     results = pd.DataFrame([{
-        "Model": "Quantum Transformer",
+        "Model": "QNN-DNN",
         "MSE": mse,
         "RMSE": rmse,
+        "Accuracy": accuracy,
         "R2": r2,
         "Pearson_r": pearson_corr,
-        "Accuracy": accuracy,
-        "AUC_ROC": auc
+        "AUC_ROC": auc_roc
     }])
-    results.to_csv("results/davis_qtransformer_results.csv", index=False)
-    print("\n✅ Results saved to results/davis_qtransformer_results.csv")
+    results.to_csv("results/bindingdb_qnn_dnn_results.csv", index=False)
+    print("\n✅ Results saved to results/bindingdb_qnn_dnn_results.csv")
 
 if __name__ == "__main__":
-    train_qtransformer()
+    train_qnn_dnn()
